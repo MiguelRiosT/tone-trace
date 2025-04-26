@@ -13,17 +13,26 @@ def analyze_frequency(audio, samplerate):
     audio_fft = np.fft.fft(audio)
     freq = np.fft.fftfreq(n, d=1/samplerate)
 
-    # Usamos solo la mitad positiva
+    # Solo la mitad positiva
     magnitude = np.abs(audio_fft)[:n//2]
     freq = freq[:n//2]
 
     return freq, magnitude
 
 def detect_gender(freq, magnitude):
-    peak_idx = np.argmax(magnitude)
-    peak_freq = freq[peak_idx]
+    # Filtrar frecuencias relevantes (85 Hz a 300 Hz)
+    mask = (freq >= 85) & (freq <= 300)
+    filtered_freq = freq[mask]
+    filtered_magnitude = magnitude[mask]
 
-    print(f"Frecuencia pico detectada: {peak_freq:.2f} Hz")
+    if len(filtered_magnitude) == 0:
+        print("No se detectaron frecuencias relevantes.")
+        return "Indefinido"
+
+    peak_idx = np.argmax(filtered_magnitude)
+    peak_freq = filtered_freq[peak_idx]
+
+    print(f"Frecuencia pico detectada (filtrada): {peak_freq:.2f} Hz")
 
     if 85 <= peak_freq <= 180:
         return "Hombre"
