@@ -1,6 +1,10 @@
 import numpy as np
 import sounddevice as sd
 
+def is_audio_loud_enough(audio, threshold=0.01):
+    energy = np.sum(audio ** 2) / len(audio)
+    return energy > threshold
+
 def record_audio(duration=3, samplerate=44100):
     print("Grabando...")
     audio = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=1)
@@ -43,6 +47,11 @@ def detect_gender(freq, magnitude):
     
 def main():
     audio, samplerate = record_audio()
+
+    if not is_audio_loud_enough(audio):
+        print("No se detectó suficiente sonido para analizar.")
+        return
+    
     freq, magnitude = analyze_frequency(audio, samplerate)
     gender = detect_gender(freq, magnitude)
     print(f"Se detectó voz de: {gender}")
