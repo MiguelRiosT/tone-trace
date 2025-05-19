@@ -1,6 +1,6 @@
 <h1 align="center"> 🔊 Tone Trace 🐾 </h1>
 
-![Tone Trace Demo](assets/tonetraceimg.png)
+![Tone Trace Demo](assets/tonetraceimage.png)
 
 **Tone Trace** is a lightweight signal processing tool that classifies **human voices** (male/female) and **animal sounds** (cat/dog) using **Fourier series** and **Laplace transform** techniques.
 
