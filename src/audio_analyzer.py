@@ -57,18 +57,27 @@ class AudioAnalyzer:
         """Extrae características de la señal usando FFT"""
         if signal is None:
             return None
-            
+
         freqs, fft_result = self.compute_fft(signal)
         if freqs is None:
             return None
-            
-        # Encontrar los picos más prominentes en el espectro
-        peak_indices = self._find_peaks(fft_result)
+
+        # Ajustar a longitud fija
+        N = 2048  # Puedes cambiar este tamaño si lo deseas
+        #N = 4096 
+        fft_result_resized = np.interp(
+            np.linspace(0, len(fft_result), N),
+            np.arange(len(fft_result)),
+            fft_result
+        )   
+
+        # Encontrar los picos más prominentes en el espectro reescalado
+        peak_indices = self._find_peaks(fft_result_resized)
         
         # Crear un vector de características basado en los picos
-        feature_vector = np.zeros(len(fft_result))
+        feature_vector = np.zeros(N)
         for idx in peak_indices:
-            feature_vector[idx] = fft_result[idx]
+            feature_vector[idx] = fft_result_resized[idx]
             
         return feature_vector
     
@@ -148,3 +157,52 @@ class AudioAnalyzer:
             plt.close()
         else:
             plt.show() 
+       
+    def find_match_in_all_audios(self, fragment_file, block_duration, min_matches=2):
+        """
+        Encuentra audios similares al fragmento, usando:
+        - comparación por bloques con overlap
+        - threshold dinámico por archivo
+        - al menos 'min_matches' bloques por archivo deben coincidir
+        """
+        matches = []
+        fragment_signal, _ = self.load_audio(fragment_file)
+        if fragment_signal is None:
+            return matches
+
+        fragment_vector = self.extract_features(fragment_signal)
+        if fragment_vector is None:
+            return matches
+
+        block_size = int(block_duration * self.sample_rate)
+
+        for file_path in self.assets_dir.glob("*.wav"):
+            if str(file_path.resolve()) == str(Path(fragment_file).resolve()):
+                continue
+
+            long_signal, _ = self.load_audio(file_path)
+            if long_signal is None or len(long_signal) < block_size:
+                continue
+
+            all_scores = []
+
+            for i in range(0, len(long_signal) - block_size + 1, block_size // 2):
+                block = long_signal[i:i + block_size]
+                block_vector = self.extract_features(block)
+                if block_vector is None:
+                    continue
+
+                sim = cosine_similarity(fragment_vector.reshape(1, -1), block_vector.reshape(1, -1))[0][0]
+                all_scores.append(sim)
+
+            if len(all_scores) == 0:
+                continue
+
+            # --- Estrategia Combinada ---
+            threshold_dynamic = np.percentile(all_scores, 90)  # top 10%
+            strong_matches = [s for s in all_scores if s >= threshold_dynamic]
+
+            if len(strong_matches) >= min_matches:
+                matches.append((str(file_path), max(strong_matches)))  # guardar la similitud más alta
+
+        return sorted(matches, key=lambda x: x[1], reverse=True)
