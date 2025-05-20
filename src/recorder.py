@@ -40,3 +40,6 @@ def play_audio():
         sd.wait()
     else:
         messagebox.showwarning("Archivo no encontrado", "No se encontró ningún audio grabado.")
+
+def get_last_audio_file():
+    return last_audio_file
