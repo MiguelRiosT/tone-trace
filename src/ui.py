@@ -108,9 +108,14 @@ def start_ui():
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         plt.close(fig)
+
         # Mostrar resultados de similitud
         if similar_files:
-            update_status(f"✅ Análisis completado. Se encontraron {len(similar_files)} audios similares.")
+            # Obtener el nombre del primer archivo más similar (el de mayor similitud)
+            most_similar_file = os.path.basename(similar_files[0][0])
+            similarity_value = similar_files[0][1]
+            update_status(f"✅ ¡Coincidencia encontrada! El audio es similar a: {most_similar_file} (Similitud: {similarity_value:.2f})")
+            
             for file_path, similarity in similar_files:
                 file_name = os.path.basename(file_path)
                 similarity_list.insert(tk.END, f"{file_name} - Similitud: {similarity:.2f}")
