@@ -6,22 +6,30 @@ import threading
 import os
 from datetime import datetime
 
-DURATION = 5
+DURATION = 10
 FS = 44100
 OUTPUT_DIR = "assets/audio"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 last_audio_file = None
+is_recording_cancelled = False
 
 def generate_filename():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(OUTPUT_DIR, f"input_sound_{timestamp}.wav")
 
-def record_audio(update_status):
-    global last_audio_file
+def record_audio(update_status, duration):
+    global last_audio_file, is_recording_cancelled
+    is_recording_cancelled = False
     try:
-        update_status("🎙️ Grabando... ¡Habla!")
-        recording = sd.rec(int(DURATION * FS), samplerate=FS, channels=1, dtype='int16')
-        sd.wait()
+        update_status(f"🎙️ Grabando por {duration} segundos... ¡Habla!")
+        recording = sd.rec(int(duration * FS), samplerate=FS, channels=1, dtype='int16')
+        for i in range(duration * 10):  # chequeo cada 0.1 seg
+            if is_recording_cancelled:
+                sd.stop()
+                update_status("❌ Grabación cancelada.")
+                return
+            sd.sleep(100)
+
         output_file = generate_filename()
         wav.write(output_file, FS, recording)
         last_audio_file = output_file
@@ -29,8 +37,12 @@ def record_audio(update_status):
     except Exception as e:
         update_status(f"❌ Error: {e}")
 
-def record_audio_thread(update_status):
-    threading.Thread(target=record_audio, args=(update_status,)).start()
+def cancel_recording():
+    global is_recording_cancelled
+    is_recording_cancelled = True
+
+def record_audio_thread(update_status, duration):
+    threading.Thread(target=record_audio, args=(update_status, duration)).start()
 
 def play_audio():
     global last_audio_file
@@ -43,3 +55,9 @@ def play_audio():
 
 def get_last_audio_file():
     return last_audio_file
+
+def stop_playback():
+    try:
+        sd.stop()
+    except Exception as e:
+        print(f"Error al detener reproducción: {e}")
