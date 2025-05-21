@@ -77,21 +77,40 @@ def start_ui():
             widget.destroy()
         similarity_listbox.delete("1.0", "end")
 
-        try:
-            signal, sr = analyzer.load_audio(last_audio_file)
-            freqs, fft_result = analyzer.compute_fft(signal)
-            duration = librosa.get_duration(y=signal, sr=sr)
-            similar_files = analyzer.find_match_in_all_audios(
-                last_audio_file,
-                block_duration=duration,
-                min_matches=2  # Puedes ajustar este valor si deseas más flexibilidad
-            )
+        def analysis_logic():
+            try:
+                signal, sr = analyzer.load_audio(last_audio_file)
+                freqs, fft_result = analyzer.compute_fft(signal)
+                duration = librosa.get_duration(y=signal, sr=sr)
 
-            root.after(0, lambda: update_analysis_results(signal, sr, freqs, fft_result, similar_files))
+                similar_files = analyzer.find_match_in_all_audios(
+                    last_audio_file,
+                    block_duration=duration,
+                    min_matches=2
+                )
 
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-            update_status("❌ Error durante el análisis")
+                # Si hay coincidencias, guardar ruta para graficar después
+                if similar_files:
+                    match_path, _ = similar_files[0]
+                else:
+                    match_path = None
+
+                # Ejecutar render en hilo principal
+                def update_ui():
+                    update_analysis_results(signal, sr, freqs, fft_result, similar_files)
+                    if match_path:
+                        analyzer.plot_fft_comparison(last_audio_file, match_path)
+
+                root.after(0, update_ui)
+
+            except Exception as e:
+                root.after(0, lambda: (
+                    messagebox.showerror("Error", str(e)),
+                    update_status("❌ Error durante el análisis")
+                ))
+
+        # Ejecutar en hilo
+        threading.Thread(target=analysis_logic).start()
 
     def update_analysis_results(signal, sr, freqs, fft_result, similar_files):
         tiempos = np.linspace(0, len(signal) / sr, num=len(signal))
