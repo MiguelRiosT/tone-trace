@@ -146,7 +146,7 @@ def start_ui():
 
     # Botones
     tk.Button(button_frame, text="🎤 Grabar Sonido", font=("Arial", 12), bg="#4CAF50", fg="white",
-               command=lambda: record_audio_thread(update_status)).pack(side=tk.LEFT, padx=5)
+               command=lambda: record_audio_thread(update_status, root)).pack(side=tk.LEFT, padx=5)
 
     tk.Button(button_frame, text="📂 Cargar Archivo de Audio", font=("Arial", 12), bg="#4CAF50", fg="white",
                command=lambda: load_audio_file(update_status)).pack(side=tk.LEFT, padx=5)
