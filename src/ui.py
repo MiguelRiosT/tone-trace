@@ -79,57 +79,38 @@ def start_ui():
 
         def analysis_logic():
             try:
-                signal, sr = analyzer.load_audio(last_audio_file)
-                freqs, fft_result = analyzer.compute_fft(signal)
-                duration = librosa.get_duration(y=signal, sr=sr)
-
                 similar_files = analyzer.find_match_in_all_audios(
                     last_audio_file,
-                    block_duration=duration,
+                    block_duration=10,  # Valor dummy, no se usa en el nuevo backend
                     min_matches=2
                 )
 
-                # Si hay coincidencias, guardar ruta para graficar después
                 if similar_files:
                     match_path, _ = similar_files[0]
                 else:
                     match_path = None
 
-                # Ejecutar render en hilo principal
                 def update_ui():
-                    update_analysis_results(signal, sr, freqs, fft_result, similar_files)
+                    update_analysis_results(similar_files)
                     if match_path:
                         analyzer.plot_fft_comparison(last_audio_file, match_path)
 
                 root.after(0, update_ui)
 
             except Exception as e:
-                root.after(0, lambda: (
+                root.after(0, lambda e=e: (
                     messagebox.showerror("Error", str(e)),
                     update_status("❌ Error durante el análisis")
                 ))
-
-        # Ejecutar en hilo
         threading.Thread(target=analysis_logic).start()
 
-    def update_analysis_results(signal, sr, freqs, fft_result, similar_files):
-        tiempos = np.linspace(0, len(signal) / sr, num=len(signal))
-        fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(tiempos, signal, color='dodgerblue')
-        ax.set_title("Forma de onda del audio")
-        ax.set_xlabel("Tiempo (s)")
-        ax.set_ylabel("Amplitud")
-        canvas = FigureCanvasTkAgg(fig, master=spectrum_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
-        plt.close(fig)
-
-        filtered_files = [(f, s) for f, s in similar_files if s > 0.15]
-
+    def update_analysis_results(similar_files):
+        similarity_listbox.delete("1.0", "end")
+        filtered_files = [(f, s) for f, s in similar_files if s > 0]
         if filtered_files:
             for file_path, similarity in filtered_files:
                 name = os.path.basename(file_path)
-                similarity_listbox.insert("end", f"{name} - Similitud: {similarity:.2f}\n")
+                similarity_listbox.insert("end", f"{name} - Similitud: {similarity}\n")
             update_status(f"✅ ¡Coincidencias encontradas!")
         else:
             update_status("✅ Análisis completado. No se encontraron audios similares.")

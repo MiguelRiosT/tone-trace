@@ -1,214 +1,151 @@
-import numpy as np
-import librosa
-import librosa.display
-import matplotlib.pyplot as plt
-from scipy.fft import fft, fftfreq
 import os
+import numpy as np
+import hashlib
 from pathlib import Path
-import soundfile as sf
-from sklearn.metrics.pairwise import cosine_similarity
+from scipy.ndimage import maximum_filter, generate_binary_structure, iterate_structure, binary_erosion
+import matplotlib.pyplot as plt
+import librosa
+from numpy.fft import fft, fftfreq
+
+AUDIO_DIR = 'assets/audio'
+IDX_FREQ_I = 0
+IDX_TIME_J = 1
+FS_POR_DEFECTO = 44100
+TAMANO_VENTANA_POR_DEFECTO = 1024
+RELACION_SUPERPOSICION_POR_DEFECTO = 0.5
+VALOR_FAN_POR_DEFECTO = 15
+AMP_MIN_POR_DEFECTO = 1
+TAMANO_VECINDARIO_PICOS = 20
+MIN_DELTA_TIEMPO_HASH = 0
+MAX_DELTA_TIEMPO_HASH = 200
+ORDENAR_PICOS = True
+REDUCCION_HUELLA = 20
 
 class AudioAnalyzer:
-    def __init__(self, sample_rate=44100):
-        self.sample_rate = sample_rate
-        self.assets_dir = Path("assets/audio")
-        self.assets_dir.mkdir(parents=True, exist_ok=True)
-        
-    def load_audio(self, file_path):
-        try:
-            signal, sr = librosa.load(file_path, sr=self.sample_rate, mono=True)
-            signal = librosa.util.normalize(signal)
-            return signal, sr
-        except Exception as e:
-            print(f"Error al cargar el archivo {file_path}: {e}")
-            return None, None
-    
-    def compute_fft(self, signal):
-        if signal is None:
-            return None, None
+    def __init__(self, audio_dir=AUDIO_DIR):
+        self.audio_dir = Path(audio_dir)
+        self.audio_dir.mkdir(parents=True, exist_ok=True)
+        self._ya_graficado = False
 
-        window = np.hanning(len(signal))
-        windowed_signal = signal * window
+    def _reemplazarCeros(self, datos):
+        min_nonzero = np.min(datos[np.nonzero(datos)])
+        datos[datos == 0] = min_nonzero
+        return datos
 
-        fft_result = fft(windowed_signal)
-        freqs = fftfreq(len(signal), 1/self.sample_rate)
-
-        positive_freq_mask = freqs >= 0
-        freqs = freqs[positive_freq_mask]
-        fft_result = np.abs(fft_result[positive_freq_mask])
-        fft_result = fft_result / np.max(fft_result)
-
-        return freqs, fft_result
-    
-    def extract_features(self, signal):
-        if signal is None:
-            return None
-
-        freqs, fft_result = self.compute_fft(signal)
-        if freqs is None:
-            return None
-
-        N = 2048
-        fft_result_resized = np.interp(
-            np.linspace(0, len(fft_result), N),
-            np.arange(len(fft_result)),
-            fft_result
-        )   
-
-        peak_indices = self._find_peaks(fft_result_resized)
-        
-        feature_vector = np.zeros(N)
-        for idx in peak_indices:
-            feature_vector[idx] = fft_result_resized[idx]
-            
-        return feature_vector
-    
-    def _find_peaks(self, signal, threshold=0.1, min_distance=10):
-        peaks = []
-        for i in range(1, len(signal)-1):
-            if signal[i] > threshold and signal[i] > signal[i-1] and signal[i] > signal[i+1]:
-                if not any(abs(i-p) < min_distance for p in peaks):
-                    peaks.append(i)
-        return sorted(peaks, key=lambda x: signal[x], reverse=True)[:20]
-    
-    def analyze_audio(self, file_path):
-        signal, _ = self.load_audio(file_path)
-        if signal is None:
-            return None
-            
-        return self.extract_features(signal)
-    
-    def compare_audio_files(self, file1, file2):
-        features1 = self.analyze_audio(file1)
-        features2 = self.analyze_audio(file2)
-        
-        if features1 is None or features2 is None:
-            return 0.0
-            
-        similarity = cosine_similarity(features1.reshape(1, -1), features2.reshape(1, -1))[0][0]
-        return similarity
-    
-    def find_similar_audio(self, target_file, threshold=0.5):
-        if not os.path.exists(target_file):
-            print(f"El archivo {target_file} no existe")
-            return []
-            
-        target_features = self.analyze_audio(target_file)
-        if target_features is None:
-            return []
-            
-        similar_files = []
-        
-        for file_path in self.assets_dir.glob("*.wav"):
-            if str(file_path) == target_file:
+    def _huellas_digitales(self, muestras, Fs=FS_POR_DEFECTO, tamano_ventana=TAMANO_VENTANA_POR_DEFECTO, relacion_superposicion=RELACION_SUPERPOSICION_POR_DEFECTO, amp_min=-60):
+        hop_size = int(tamano_ventana * (1 - RELACION_SUPERPOSICION_POR_DEFECTO))
+        n_frames = 1 + (len(muestras) - tamano_ventana) // hop_size if len(muestras) >= tamano_ventana else 0
+        arr2D = []
+        for i in range(n_frames):
+            start = i * hop_size
+            end = start + tamano_ventana
+            frame = muestras[start:end]
+            if len(frame) < tamano_ventana:
                 continue
-                
-            similarity = self.compare_audio_files(target_file, str(file_path))
-            if similarity >= threshold:
-                similar_files.append((str(file_path), similarity))
-                
-                # Mostrar una vez la comparación gráfica
-                self.plot_comparison(target_file, str(file_path))
-                break
-
-        return sorted(similar_files, key=lambda x: x[1], reverse=True)
-    
-    def plot_spectrum(self, file_path, save_path=None):
-        signal, _ = self.load_audio(file_path)
-        if signal is None:
-            return
-            
-        freqs, fft_result = self.compute_fft(signal)
-        if freqs is None:
-            return
-            
-        plt.figure(figsize=(12, 6))
-        plt.plot(freqs, np.abs(fft_result))
-        plt.title(f"Espectro de Frecuencia: {os.path.basename(file_path)}")
-        plt.xlabel("Frecuencia (Hz)")
-        plt.ylabel("Amplitud")
-        plt.grid(True)
-        
-        if save_path:
-            plt.savefig(save_path)
-            plt.close()
-        else:
+            windowed = frame * np.hanning(tamano_ventana)
+            spectrum = np.abs(fft(windowed))[:tamano_ventana // 2]
+            spectrum = 10 * np.log10(self._reemplazarCeros(spectrum))
+            arr2D.append(spectrum)
+        arr2D = np.array(arr2D).T  # shape: [freq_bins, time_frames]
+        arr2D[arr2D == -np.inf] = 0
+        print(f"Espectrograma (FFT manual): min={np.min(arr2D)}, max={np.max(arr2D)}")
+        print(f"Percentil 90 del espectrograma: {np.percentile(arr2D, 90)}")
+        if not self._ya_graficado and arr2D.size > 0:
+            plt.figure(figsize=(10, 4))
+            plt.imshow(arr2D, aspect='auto', origin='lower')
+            plt.title('Espectrograma (FFT manual, dB)')
+            plt.colorbar()
             plt.show()
-       
+            self._ya_graficado = True
+        neighborhood = iterate_structure(generate_binary_structure(2, 1), TAMANO_VECINDARIO_PICOS)
+        maxima = maximum_filter(arr2D, footprint=neighborhood) == arr2D
+        background = (arr2D == 0)
+        eroded_background = binary_erosion(background, structure=neighborhood, border_value=1)
+        detected_peaks = maxima & ~eroded_background
+        amps = arr2D[detected_peaks]
+        j, i = np.where(detected_peaks)
+        amps = amps.flatten()
+        peaks = list(zip(i, j, amps))
+        peaks_filtered = [x for x in peaks if x[2] > amp_min]
+        frecuencia_picos = [x[1] for x in peaks_filtered]
+        tiempo_picos = [x[0] for x in peaks_filtered]
+        return list(zip(frecuencia_picos, tiempo_picos))
+
+    def _generar_hashes(self, picos, valor_fan=VALOR_FAN_POR_DEFECTO):
+        if ORDENAR_PICOS:
+            picos.sort(key=lambda x: x[1])
+        for i in range(len(picos)):
+            for j in range(1, valor_fan):
+                if (i + j) < len(picos):
+                    freq1 = picos[i][IDX_FREQ_I]
+                    freq2 = picos[i + j][IDX_FREQ_I]
+                    t1 = picos[i][IDX_TIME_J]
+                    t2 = picos[i + j][IDX_TIME_J]
+                    t_delta = t2 - t1
+                    if MIN_DELTA_TIEMPO_HASH <= t_delta <= MAX_DELTA_TIEMPO_HASH:
+                        h = hashlib.sha1(f"{freq1}|{freq2}|{t_delta}".encode('utf-8'))
+                        yield (h.hexdigest()[0:REDUCCION_HUELLA], t1)
+
+    def _extraer_hashes_audio(self, file_path):
+        y, sr = librosa.load(file_path, sr=FS_POR_DEFECTO, mono=True)
+        print(f"Audio: {file_path} - min={np.min(y)}, max={np.max(y)}")
+        if np.max(np.abs(y)) > 0:
+            y = y / np.max(np.abs(y))
+        picos = self._huellas_digitales(y, Fs=sr)
+        print(f"Archivo: {file_path} - Picos detectados: {len(picos)}")
+        hashes = list(self._generar_hashes(picos))
+        print(f"Archivo: {file_path} - Hashes generados: {len(hashes)}")
+        return hashes
+
+    def _comparar_hashes(self, hashes1, hashes2):
+        coincidencias = []
+        for hash1, offset1 in hashes1:
+            for hash2, offset2 in hashes2:
+                if hash1 == hash2:
+                    coincidencias.append(offset2 - offset1)
+        if not coincidencias:
+            return 0
+        # El score es la cantidad máxima de coincidencias alineadas
+        from collections import Counter
+        diff_counter = Counter(coincidencias)
+        return max(diff_counter.values())
+
+    def find_similar_audio(self, target_file, threshold=0.1):
+        hashes_target = self._extraer_hashes_audio(target_file)
+        mejores = []
+        for file_path in self.audio_dir.glob('*.wav'):
+            # Permitir comparar consigo mismo para depuración
+            # if str(file_path.resolve()) == str(Path(target_file).resolve()):
+            #     continue
+            hashes_candidato = self._extraer_hashes_audio(str(file_path))
+            score = self._comparar_hashes(hashes_target, hashes_candidato)
+            print(f"Comparando {target_file} con {file_path}: score={score}")
+            if score > 0:
+                mejores.append((str(file_path), score))
+        mejores = sorted(mejores, key=lambda x: x[1], reverse=True)
+        if mejores:
+            return [mejores[0]]
+        return []
+
     def find_match_in_all_audios(self, fragment_file, block_duration, min_matches=2):
-        matches = []
-        fragment_signal, _ = self.load_audio(fragment_file)
-        if fragment_signal is None:
-            return matches
-
-        fragment_vector = self.extract_features(fragment_signal)
-        if fragment_vector is None:
-            return matches
-
-        block_size = int(block_duration * self.sample_rate)
-
-        for file_path in self.assets_dir.glob("*.wav"):
-            if str(file_path.resolve()) == str(Path(fragment_file).resolve()):
-                continue
-
-            long_signal, _ = self.load_audio(file_path)
-            if long_signal is None or len(long_signal) < block_size:
-                continue
-
-            all_scores = []
-
-            for i in range(0, len(long_signal) - block_size + 1, block_size // 2):
-                block = long_signal[i:i + block_size]
-                block_vector = self.extract_features(block)
-                if block_vector is None:
-                    continue
-
-                sim = cosine_similarity(fragment_vector.reshape(1, -1), block_vector.reshape(1, -1))[0][0]
-                all_scores.append(sim)
-
-            if len(all_scores) == 0:
-                continue
-
-            threshold_dynamic = np.percentile(all_scores, 90)
-            strong_matches = [s for s in all_scores if s >= threshold_dynamic]
-
-            if len(strong_matches) >= min_matches:
-                matches.append((str(file_path), max(strong_matches)))
-
-        return sorted(matches, key=lambda x: x[1], reverse=True)
+        return self.find_similar_audio(fragment_file)
 
     def plot_fft_comparison(self, recent_path, match_path):
-        """Grafica los espectros de frecuencia (FFT) del audio reciente y el coincidente"""
-        signal1, _ = self.load_audio(recent_path)
-        signal2, _ = self.load_audio(match_path)
-
-        if signal1 is None or signal2 is None:
-            print("Error cargando alguno de los audios para comparación.")
-            return
-
-        freqs1, fft1 = self.compute_fft(signal1)
-        freqs2, fft2 = self.compute_fft(signal2)
-
-        if freqs1 is None or freqs2 is None:
-            print("Error al calcular la FFT.")
-            return
-
+        import matplotlib.pyplot as plt
+        y1, sr1 = librosa.load(recent_path, sr=FS_POR_DEFECTO, mono=True)
+        y2, sr2 = librosa.load(match_path, sr=FS_POR_DEFECTO, mono=True)
         plt.figure(figsize=(14, 6))
-        plt.suptitle(f"Comparación de espectros de frecuencia", fontsize=16)
-
         plt.subplot(1, 2, 1)
-        plt.plot(freqs1, fft1, color='blue')
-        plt.title(f"Espectro: {os.path.basename(recent_path)}")
-        plt.xlabel("Frecuencia (Hz)")
-        plt.ylabel("Amplitud")
-        plt.grid(True)
-
+        plt.specgram(y1, Fs=sr1, NFFT=TAMANO_VENTANA_POR_DEFECTO, noverlap=int(TAMANO_VENTANA_POR_DEFECTO * RELACION_SUPERPOSICION_POR_DEFECTO))
+        plt.title(f"Espectrograma: {os.path.basename(recent_path)}")
+        plt.xlabel("Tiempo")
+        plt.ylabel("Frecuencia")
+        plt.colorbar().set_label('Intensidad (dB)')
         plt.subplot(1, 2, 2)
-        plt.plot(freqs2, fft2, color='orange')
-        plt.title(f"Espectro: {os.path.basename(match_path)}")
-        plt.xlabel("Frecuencia (Hz)")
-        plt.ylabel("Amplitud")
-        plt.grid(True)
-
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.specgram(y2, Fs=sr2, NFFT=TAMANO_VENTANA_POR_DEFECTO, noverlap=int(TAMANO_VENTANA_POR_DEFECTO * RELACION_SUPERPOSICION_POR_DEFECTO))
+        plt.title(f"Espectrograma: {os.path.basename(match_path)}")
+        plt.xlabel("Tiempo")
+        plt.ylabel("Frecuencia")
+        plt.colorbar().set_label('Intensidad (dB)')
+        plt.tight_layout()
         plt.show()
