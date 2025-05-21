@@ -17,12 +17,8 @@ class AudioAnalyzer:
     def load_audio(self, file_path):
         """Carga un archivo de audio y retorna la señal y la frecuencia de muestreo"""
         try:
-            # Cargar el audio y asegurar que esté en mono
             signal, sr = librosa.load(file_path, sr=self.sample_rate, mono=True)
-            
-            # Normalizar la señal
             signal = librosa.util.normalize(signal)
-            
             return signal, sr
         except Exception as e:
             print(f"Error al cargar el archivo {file_path}: {e}")
@@ -33,22 +29,15 @@ class AudioAnalyzer:
         if signal is None:
             return None, None
             
-        # Aplicar ventana de Hann para reducir el efecto de los bordes
         window = np.hanning(len(signal))
         windowed_signal = signal * window
         
-        # Calcular FFT
         fft_result = fft(windowed_signal)
-        
-        # Calcular frecuencias correspondientes
         freqs = fftfreq(len(signal), 1/self.sample_rate)
         
-        # Solo tomar la parte positiva de la FFT (frecuencias positivas)
         positive_freq_mask = freqs >= 0
         freqs = freqs[positive_freq_mask]
         fft_result = np.abs(fft_result[positive_freq_mask])
-        
-        # Normalizar la FFT
         fft_result = fft_result / np.max(fft_result)
         
         return freqs, fft_result
@@ -62,10 +51,7 @@ class AudioAnalyzer:
         if freqs is None:
             return None
             
-        # Encontrar los picos más prominentes en el espectro
         peak_indices = self._find_peaks(fft_result)
-        
-        # Crear un vector de características basado en los picos
         feature_vector = np.zeros(len(fft_result))
         for idx in peak_indices:
             feature_vector[idx] = fft_result[idx]
@@ -77,17 +63,15 @@ class AudioAnalyzer:
         peaks = []
         for i in range(1, len(signal)-1):
             if signal[i] > threshold and signal[i] > signal[i-1] and signal[i] > signal[i+1]:
-                # Verificar que no esté muy cerca de otro pico
                 if not any(abs(i-p) < min_distance for p in peaks):
                     peaks.append(i)
-        return sorted(peaks, key=lambda x: signal[x], reverse=True)[:20]  # Retornar los 20 picos más fuertes
+        return sorted(peaks, key=lambda x: signal[x], reverse=True)[:20]
     
     def analyze_audio(self, file_path):
         """Analiza un archivo de audio y retorna sus características"""
         signal, _ = self.load_audio(file_path)
         if signal is None:
             return None
-            
         return self.extract_features(signal)
     
     def compare_audio_files(self, file1, file2):
@@ -98,7 +82,6 @@ class AudioAnalyzer:
         if features1 is None or features2 is None:
             return 0.0
             
-        # Calcular similitud del coseno
         similarity = cosine_similarity(features1.reshape(1, -1), features2.reshape(1, -1))[0][0]
         return similarity
     
@@ -111,10 +94,8 @@ class AudioAnalyzer:
         target_features = self.analyze_audio(target_file)
         if target_features is None:
             return []
-            
-        similar_files = []
         
-        # Analizar todos los archivos en la carpeta de assets
+        similar_files = []
         for file_path in self.assets_dir.glob("*.wav"):
             if str(file_path) == target_file:
                 continue
@@ -122,29 +103,48 @@ class AudioAnalyzer:
             similarity = self.compare_audio_files(target_file, str(file_path))
             if similarity >= threshold:
                 similar_files.append((str(file_path), similarity))
-                
-        # Ordenar por similitud (de mayor a menor)
-        return sorted(similar_files, key=lambda x: x[1], reverse=True)
-    
-    def plot_spectrum(self, file_path, save_path=None):
-        """Genera y muestra/guarda un gráfico del espectro de frecuencia"""
-        signal, _ = self.load_audio(file_path)
-        if signal is None:
+        
+        similar_files = sorted(similar_files, key=lambda x: x[1], reverse=True)
+
+        if similar_files:
+            similar_file, similarity = similar_files[0]
+            print(f"Archivo más similar: {similar_file} (Similitud: {similarity:.2f})")
+            self.plot_comparison_spectrums(target_file, similar_file, similarity)
+        
+        return similar_files
+
+    def plot_comparison_spectrums(self, recent_file, similar_file, similarity_score):
+        """Muestra dos espectros de frecuencia comparando un archivo reciente con uno similar"""
+        signal1, _ = self.load_audio(recent_file)
+        signal2, _ = self.load_audio(similar_file)
+        
+        if signal1 is None or signal2 is None:
+            print("No se pudieron cargar ambos archivos para comparar.")
             return
-            
-        freqs, fft_result = self.compute_fft(signal)
-        if freqs is None:
+        
+        freqs1, fft1 = self.compute_fft(signal1)
+        freqs2, fft2 = self.compute_fft(signal2)
+        
+        if freqs1 is None or freqs2 is None:
+            print("No se pudieron calcular las FFT.")
             return
-            
-        plt.figure(figsize=(12, 6))
-        plt.plot(freqs, np.abs(fft_result))
-        plt.title(f"Espectro de Frecuencia: {os.path.basename(file_path)}")
+        
+        plt.figure(figsize=(14, 6))
+        plt.suptitle(f"Comparación de espectros (Similitud: {similarity_score:.2f})", fontsize=16)
+        
+        plt.subplot(1, 2, 1)
+        plt.plot(freqs1, fft1, color='blue')
+        plt.title(f"Archivo reciente: {os.path.basename(recent_file)}")
         plt.xlabel("Frecuencia (Hz)")
         plt.ylabel("Amplitud")
         plt.grid(True)
         
-        if save_path:
-            plt.savefig(save_path)
-            plt.close()
-        else:
-            plt.show() 
+        plt.subplot(1, 2, 2)
+        plt.plot(freqs2, fft2, color='orange')
+        plt.title(f"Coincidencia: {os.path.basename(similar_file)}")
+        plt.xlabel("Frecuencia (Hz)")
+        plt.ylabel("Amplitud")
+        plt.grid(True)
+        
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.show()
