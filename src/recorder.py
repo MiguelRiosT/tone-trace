@@ -59,6 +59,13 @@ def generate_filename(custom_name=None):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(OUTPUT_DIR, f"input_sound_{timestamp}.wav")
 
+def generate_temp_filename(custom_name=None):
+    if custom_name:
+        custom_name = "".join(c for c in custom_name if c.isalnum() or c in (' ', '_', '-'))
+        return os.path.join(TEMP_DIR, f"{custom_name}.wav")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return os.path.join(TEMP_DIR, f"input_sound_{timestamp}.wav")
+
 def record_audio(update_status, duration):
     """
     Función principal de grabación de audio con monitoreo en tiempo real.
@@ -99,7 +106,7 @@ def record_audio(update_status, duration):
             sd.sleep(100)  # 100ms de espera
         
         # Generación de archivo de salida
-        output_file = generate_filename()
+        output_file = generate_temp_filename()
         
         # Guardado en formato WAV sin compresión
         # WAV preserva toda la información espectral necesaria para FFT
