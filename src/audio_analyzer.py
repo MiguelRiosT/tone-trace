@@ -206,15 +206,6 @@ class AudioAnalyzer:
         print(f"Espectrograma (FFT manual): min={np.min(arr2D)}, max={np.max(arr2D)}")
         print(f"Percentil 90 del espectrograma: {np.percentile(arr2D, 90)}")
         
-        # Visualización del espectrograma (solo una vez)
-        if not self._ya_graficado and arr2D.size > 0:
-            plt.figure(figsize=(10, 4))
-            plt.imshow(arr2D, aspect='auto', origin='lower')
-            plt.title('Espectrograma (FFT manual, dB)')
-            plt.colorbar()
-            plt.show()
-            self._ya_graficado = True
-        
         # PASO 5: DETECCIÓN DE PICOS ESPECTRALES
         # ======================================
         
