@@ -53,28 +53,27 @@ IDX_FREQ_I = 0  # Índice de frecuencia en el pico
 IDX_TIME_J = 1  # Índice de tiempo en el pico
 
 # PARÁMETROS DE LA TRANSFORMADA DE FOURIER
-FS_POR_DEFECTO = 44100  # Frecuencia de muestreo estándar (Hz)
+FS_DEFAULT = 44100  # Frecuencia de muestreo estándar (Hz)
                         # Según el teorema de Nyquist: fs ≥ 2*f_max
                         # Para audio humano (20Hz-20kHz), 44.1kHz es suficiente
 
-TAMANO_VENTANA_POR_DEFECTO = 1024  # Tamaño de ventana para FFT
+EFFECT_WINDOW_SIZE = 1024  # Tamaño de ventana para FFT
                                    # Mayor ventana = mejor resolución frecuencial
                                    # Menor ventana = mejor resolución temporal
                                    # Compromiso tiempo-frecuencia de Heisenberg: Δt·Δf ≥ 1/4π
 
-RELACION_SUPERPOSICION_POR_DEFECTO = 0.5  # 50% de superposición entre ventanas
+RELATIONSHIP_OVERLAP_BY_DEFECT = 0.5  # 50% de superposición entre ventanas
                                            # Evita pérdida de información en los bordes
 
 # PARÁMETROS DEL ALGORITMO DE FINGERPRINTING
-VALOR_FAN_POR_DEFECTO = 15        # Número de picos futuros a considerar para hashes
-AMP_MIN_POR_DEFECTO = 1           # Amplitud mínima para considerar un pico
-TAMANO_VECINDARIO_PICOS = 20      # Tamaño del filtro para detección de picos locales
+DEFAULT_FAN_VALUE = 15        # Número de picos futuros a considerar para hashes
+AMP_MIN_DEFECT = 20      # Tamaño del filtro para detección de picos locales
 
 # PARÁMETROS DE GENERACIÓN DE HASHES (CONSTELACIONES)
-MIN_DELTA_TIEMPO_HASH = 0         # Mínima diferencia temporal entre picos
-MAX_DELTA_TIEMPO_HASH = 200       # Máxima diferencia temporal entre picos
-ORDENAR_PICOS = True              # Ordenar picos cronológicamente
-REDUCCION_HUELLA = 20             # Caracteres del hash a conservar
+MIN_DELTA_TIME_HASH = 0         # Mínima diferencia temporal entre picos
+MAX_DELTA_TIME_HASH = 200       # Máxima diferencia temporal entre picos
+ORDER_PICES = True              # Ordenar picos cronológicamente
+FOOTPRINT_REDUCTION = 20             # Caracteres del hash a conservar
 
 
 class AudioAnalyzer:
@@ -119,9 +118,9 @@ class AudioAnalyzer:
         datos[datos == 0] = min_nonzero
         return datos
 
-    def _huellas_digitales(self, muestras, Fs=FS_POR_DEFECTO, 
-                          tamano_ventana=TAMANO_VENTANA_POR_DEFECTO, 
-                          relacion_superposicion=RELACION_SUPERPOSICION_POR_DEFECTO, 
+    def _huellas_digitales(self, muestras, Fs=FS_DEFAULT, 
+                          tamano_ventana=EFFECT_WINDOW_SIZE, 
+                          relacion_superposicion=RELATIONSHIP_OVERLAP_BY_DEFECT, 
                           amp_min=-60):
         """
         Genera las huellas digitales del audio mediante análisis espectral.
@@ -164,7 +163,7 @@ class AudioAnalyzer:
             Lista de tuplas (frecuencia_bin, tiempo_frame) de los picos detectados
         """
         # Cálculo del salto entre ventanas
-        hop_size = int(tamano_ventana * (1 - RELACION_SUPERPOSICION_POR_DEFECTO))
+        hop_size = int(tamano_ventana * (1 - RELATIONSHIP_OVERLAP_BY_DEFECT))
         
         # Número total de frames que se pueden extraer
         n_frames = 1 + (len(muestras) - tamano_ventana) // hop_size if len(muestras) >= tamano_ventana else 0
@@ -223,7 +222,7 @@ class AudioAnalyzer:
         # Genera una matriz binaria que define qué píxeles son "vecinos"
         neighborhood = iterate_structure(
             generate_binary_structure(2, 1),  # Conectividad 2D básica (4-conectada)
-            TAMANO_VECINDARIO_PICOS           # Expansión del vecindario
+            AMP_MIN_DEFECT           # Expansión del vecindario
         )
         
         # Filtro de máximos: cada punto se compara con su vecindario
@@ -254,7 +253,7 @@ class AudioAnalyzer:
         
         return list(zip(frecuencia_picos, tiempo_picos))
 
-    def _generar_hashes(self, picos, valor_fan=VALOR_FAN_POR_DEFECTO):
+    def _generar_hashes(self, picos, valor_fan=DEFAULT_FAN_VALUE):
         """
         Genera hashes basados en constelaciones de picos (algoritmo tipo Shazam).
         
@@ -290,7 +289,7 @@ class AudioAnalyzer:
             Tuplas (hash_string, tiempo_referencia) para cada constelación
         """
         # Ordenamiento cronológico de picos para procesamiento secuencial
-        if ORDENAR_PICOS:
+        if ORDER_PICES:
             picos.sort(key=lambda x: x[1])  # Ordenar por tiempo (índice 1)
         
         # Generación de constelaciones
@@ -310,7 +309,7 @@ class AudioAnalyzer:
                     t_delta = t2 - t1
                     
                     # Filtro temporal: solo considerar picos dentro del rango válido
-                    if MIN_DELTA_TIEMPO_HASH <= t_delta <= MAX_DELTA_TIEMPO_HASH:
+                    if MIN_DELTA_TIME_HASH <= t_delta <= MAX_DELTA_TIME_HASH:
                         # Generación del hash de la constelación
                         # Formato: "freq1|freq2|delta_tiempo"
                         constellation_string = f"{freq1}|{freq2}|{t_delta}"
@@ -319,7 +318,7 @@ class AudioAnalyzer:
                         h = hashlib.sha1(constellation_string.encode('utf-8'))
                         
                         # Truncamiento del hash para eficiencia de almacenamiento
-                        hash_truncated = h.hexdigest()[0:REDUCCION_HUELLA]
+                        hash_truncated = h.hexdigest()[0:FOOTPRINT_REDUCTION]
                         
                         # Yield de la tupla (hash, tiempo_referencia)
                         yield (hash_truncated, t1)
@@ -342,7 +341,7 @@ class AudioAnalyzer:
             Lista de tuplas (hash, tiempo_referencia)
         """
         # Carga de audio con frecuencia de muestreo estándar
-        y, sr = librosa.load(file_path, sr=FS_POR_DEFECTO, mono=True)
+        y, sr = librosa.load(file_path, sr=FS_DEFAULT, mono=True)
         
         print(f"Audio: {file_path} - min={np.min(y)}, max={np.max(y)}")
         
@@ -482,8 +481,8 @@ class AudioAnalyzer:
         import matplotlib.pyplot as plt
         
         # Carga de ambos archivos
-        y1, sr1 = librosa.load(recent_path, sr=FS_POR_DEFECTO, mono=True)
-        y2, sr2 = librosa.load(match_path, sr=FS_POR_DEFECTO, mono=True)
+        y1, sr1 = librosa.load(recent_path, sr=FS_DEFAULT, mono=True)
+        y2, sr2 = librosa.load(match_path, sr=FS_DEFAULT, mono=True)
         
         # Creación de subplots para comparación
         plt.figure(figsize=(14, 6))
@@ -491,8 +490,8 @@ class AudioAnalyzer:
         # Espectrograma del primer archivo
         plt.subplot(1, 2, 1)
         plt.specgram(y1, Fs=sr1, 
-                    NFFT=TAMANO_VENTANA_POR_DEFECTO, 
-                    noverlap=int(TAMANO_VENTANA_POR_DEFECTO * RELACION_SUPERPOSICION_POR_DEFECTO))
+                    NFFT=EFFECT_WINDOW_SIZE, 
+                    noverlap=int(EFFECT_WINDOW_SIZE * RELATIONSHIP_OVERLAP_BY_DEFECT))
         plt.title(f"Espectrograma: {os.path.basename(recent_path)}")
         plt.xlabel("Tiempo")
         plt.ylabel("Frecuencia")
@@ -501,8 +500,8 @@ class AudioAnalyzer:
         # Espectrograma del segundo archivo
         plt.subplot(1, 2, 2)
         plt.specgram(y2, Fs=sr2, 
-                    NFFT=TAMANO_VENTANA_POR_DEFECTO, 
-                    noverlap=int(TAMANO_VENTANA_POR_DEFECTO * RELACION_SUPERPOSICION_POR_DEFECTO))
+                    NFFT=EFFECT_WINDOW_SIZE, 
+                    noverlap=int(EFFECT_WINDOW_SIZE * RELATIONSHIP_OVERLAP_BY_DEFECT))
         plt.title(f"Espectrograma: {os.path.basename(match_path)}")
         plt.xlabel("Tiempo")
         plt.ylabel("Frecuencia")
